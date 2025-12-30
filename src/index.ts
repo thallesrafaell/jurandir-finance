@@ -3,18 +3,9 @@ import { processMessage } from "./agent";
 import { getOrCreateUser } from "./services/users";
 import { ensureMember } from "./services/groups";
 import { logger } from "./utils/logger";
+import { JURANDIR_PATTERN, extractPhoneFromId, calculateTypingDelay } from "./utils/helpers";
 import type { MessageContext } from "./types";
 import type { Chat } from "whatsapp-web.js";
-
-const JURANDIR_PATTERN = /^jurandir[,:]?\s*/i;
-
-function extractPhoneFromId(id: string): string {
-  return id.replace(/@(c\.us|lid|s\.whatsapp\.net)$/, "");
-}
-
-function calculateTypingDelay(text: string): number {
-  return Math.min(3000, Math.max(500, text.length * 10));
-}
 
 const client = createWhatsAppClient();
 
