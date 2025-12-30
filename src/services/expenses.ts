@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { getMonthRange } from "../utils/date";
 
 export async function addExpense(
   userId: string,
@@ -50,25 +51,15 @@ export async function getExpenses(
 }
 
 export async function getExpensesByCategory(userId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
-
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
+  const { startDate, endDate } = getMonthRange(month, year);
 
   const expenses = await prisma.expense.groupBy({
     by: ["category"],
     where: {
       userId,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
+      date: { gte: startDate, lte: endDate },
     },
-    _sum: {
-      amount: true,
-    },
+    _sum: { amount: true },
   });
 
   return expenses.map((e) => ({
@@ -88,10 +79,7 @@ export async function deleteExpenseByDescription(userId: string, description: st
     where: {
       userId: groupId ? undefined : userId,
       groupId: groupId ?? null,
-      description: {
-        contains: description,
-        mode: "insensitive",
-      },
+      description: { contains: description, mode: "insensitive" },
     },
     orderBy: { date: "desc" },
   });
@@ -140,10 +128,7 @@ export async function updateExpenseByDescription(
     where: {
       userId: groupId ? undefined : userId,
       groupId: groupId ?? null,
-      description: {
-        contains: description,
-        mode: "insensitive",
-      },
+      description: { contains: description, mode: "insensitive" },
     },
     orderBy: { date: "desc" },
   });
@@ -160,19 +145,13 @@ export async function findExpenseByDescription(userId: string, description: stri
   return prisma.expense.findFirst({
     where: {
       userId,
-      groupId: groupId ?? null, // null = personal expenses only
-      description: {
-        contains: description,
-        mode: "insensitive",
-      },
+      groupId: groupId ?? null,
+      description: { contains: description, mode: "insensitive" },
     },
     orderBy: { date: "desc" },
   });
 }
 
-/**
- * Busca despesas de um grupo
- */
 export async function getGroupExpenses(
   groupId: string,
   options?: {
@@ -201,29 +180,16 @@ export async function getGroupExpenses(
   });
 }
 
-/**
- * Resumo de despesas do grupo por categoria
- */
 export async function getGroupExpensesByCategory(groupId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
-
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
+  const { startDate, endDate } = getMonthRange(month, year);
 
   const expenses = await prisma.expense.groupBy({
     by: ["category"],
     where: {
       groupId,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
+      date: { gte: startDate, lte: endDate },
     },
-    _sum: {
-      amount: true,
-    },
+    _sum: { amount: true },
   });
 
   return expenses.map((e) => ({
@@ -232,17 +198,11 @@ export async function getGroupExpensesByCategory(groupId: string, month?: number
   }));
 }
 
-/**
- * Busca despesa de grupo por descrição
- */
 export async function findGroupExpenseByDescription(groupId: string, description: string) {
   return prisma.expense.findFirst({
     where: {
       groupId,
-      description: {
-        contains: description,
-        mode: "insensitive",
-      },
+      description: { contains: description, mode: "insensitive" },
     },
     orderBy: { date: "desc" },
   });

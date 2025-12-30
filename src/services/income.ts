@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { getMonthRange } from "../utils/date";
 
 export type IncomeSource = "salário" | "freelance" | "investimentos" | "presente" | "outros";
 
@@ -50,25 +51,15 @@ export async function getIncomes(
 }
 
 export async function getIncomesBySource(userId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
-
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
+  const { startDate, endDate } = getMonthRange(month, year);
 
   const incomes = await prisma.income.groupBy({
     by: ["source"],
     where: {
       userId,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
+      date: { gte: startDate, lte: endDate },
     },
-    _sum: {
-      amount: true,
-    },
+    _sum: { amount: true },
   });
 
   return incomes.map((i) => ({
@@ -78,24 +69,14 @@ export async function getIncomesBySource(userId: string, month?: number, year?: 
 }
 
 export async function getTotalIncome(userId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
-
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
+  const { startDate, endDate } = getMonthRange(month, year);
 
   const result = await prisma.income.aggregate({
     where: {
       userId,
-      date: {
-        gte: startDate,
-        lte: endDate,
-      },
+      date: { gte: startDate, lte: endDate },
     },
-    _sum: {
-      amount: true,
-    },
+    _sum: { amount: true },
   });
 
   return result._sum.amount ?? 0;
@@ -119,10 +100,7 @@ export async function deleteIncomeByDescription(userId: string, description: str
     where: {
       userId: groupId ? undefined : userId,
       groupId: groupId ?? null,
-      description: {
-        contains: description,
-        mode: "insensitive",
-      },
+      description: { contains: description, mode: "insensitive" },
     },
     orderBy: { date: "desc" },
   });
@@ -162,10 +140,7 @@ export async function updateIncomeByDescription(
     where: {
       userId: groupId ? undefined : userId,
       groupId: groupId ?? null,
-      description: {
-        contains: description,
-        mode: "insensitive",
-      },
+      description: { contains: description, mode: "insensitive" },
     },
     orderBy: { date: "desc" },
   });

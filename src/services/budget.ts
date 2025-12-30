@@ -1,16 +1,9 @@
 import { prisma } from "../db";
+import { getMonthRange } from "../utils/date";
 import { getExpensesByCategory } from "./expenses";
 
-export async function setBudget(
-  userId: string,
-  category: string,
-  limit: number,
-  month?: number,
-  year?: number
-) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
+export async function setBudget(userId: string, category: string, limit: number, month?: number, year?: number) {
+  const { month: targetMonth, year: targetYear } = getMonthRange(month, year);
 
   return prisma.budget.upsert({
     where: {
@@ -33,9 +26,7 @@ export async function setBudget(
 }
 
 export async function getBudgets(userId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
+  const { month: targetMonth, year: targetYear } = getMonthRange(month, year);
 
   return prisma.budget.findMany({
     where: {
