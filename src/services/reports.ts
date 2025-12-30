@@ -1,4 +1,5 @@
 import { prisma } from "../db";
+import { getMonthRange } from "../utils/date";
 import { calculateSplit } from "./groups";
 
 const CATEGORY_EMOJIS: Record<string, string> = {
@@ -26,54 +27,42 @@ function formatCurrency(value: number): string {
   return value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function capitalize(str: string): string {
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
+function groupByKey<T>(items: T[], keyFn: (item: T) => string): Record<string, T[]> {
+  const grouped: Record<string, T[]> = {};
+  for (const item of items) {
+    const key = keyFn(item);
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(item);
+  }
+  return grouped;
+}
+
 export async function getFullReport(userId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
+  const { startDate, endDate } = getMonthRange(month, year);
 
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
-
-  // Busca despesas do mês
   const expenses = await prisma.expense.findMany({
-    where: {
-      userId,
-      date: { gte: startDate, lte: endDate },
-    },
+    where: { userId, date: { gte: startDate, lte: endDate } },
     orderBy: { category: "asc" },
   });
 
-  // Busca entradas do mês
   const incomes = await prisma.income.findMany({
-    where: {
-      userId,
-      date: { gte: startDate, lte: endDate },
-    },
+    where: { userId, date: { gte: startDate, lte: endDate } },
     orderBy: { source: "asc" },
   });
 
-  // Agrupa despesas por categoria
-  const expensesByCategory: Record<string, typeof expenses> = {};
-  for (const expense of expenses) {
-    if (!expensesByCategory[expense.category]) {
-      expensesByCategory[expense.category] = [];
-    }
-    expensesByCategory[expense.category].push(expense);
+  if (expenses.length === 0 && incomes.length === 0) {
+    return "Nenhuma movimentação encontrada no período.";
   }
 
-  // Agrupa entradas por fonte
-  const incomesBySource: Record<string, typeof incomes> = {};
-  for (const income of incomes) {
-    if (!incomesBySource[income.source]) {
-      incomesBySource[income.source] = [];
-    }
-    incomesBySource[income.source].push(income);
-  }
+  const expensesByCategory = groupByKey(expenses, (e) => e.category);
+  const incomesBySource = groupByKey(incomes, (i) => i.source);
 
-  // Monta o relatório
   let report = "✅ *Resumo Financeiro*\n\n";
 
-  // Seção de Entradas
   if (incomes.length > 0) {
     report += "📥 *ENTRADAS*\n\n";
 
@@ -81,7 +70,7 @@ export async function getFullReport(userId: string, month?: number, year?: numbe
       const emoji = SOURCE_EMOJIS[source] || "📦";
       const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
 
-      report += `${emoji} *${source.charAt(0).toUpperCase() + source.slice(1)}*\n`;
+      report += `${emoji} *${capitalize(source)}*\n`;
       for (const item of items) {
         report += `    • ${item.description}: ${formatCurrency(item.amount)}\n`;
       }
@@ -93,7 +82,6 @@ export async function getFullReport(userId: string, month?: number, year?: numbe
     report += "⸻\n\n";
   }
 
-  // Seção de Despesas
   if (expenses.length > 0) {
     report += "📤 *DESPESAS*\n\n";
 
@@ -101,7 +89,7 @@ export async function getFullReport(userId: string, month?: number, year?: numbe
       const emoji = CATEGORY_EMOJIS[category] || "📦";
       const subtotal = items.reduce((sum, e) => sum + e.amount, 0);
 
-      report += `${emoji} *${category.charAt(0).toUpperCase() + category.slice(1)}*\n`;
+      report += `${emoji} *${capitalize(category)}*\n`;
       for (const item of items) {
         const paidMark = item.paid ? " ✅" : "";
         report += `    • ${item.description}: ${formatCurrency(item.amount)}${paidMark}\n`;
@@ -114,16 +102,11 @@ export async function getFullReport(userId: string, month?: number, year?: numbe
     const totalPending = totalExpense - totalPaid;
 
     report += `💸 *Total Despesas: R$ ${formatCurrency(totalExpense)}*\n`;
-    if (totalPaid > 0) {
-      report += `✅ Pago: R$ ${formatCurrency(totalPaid)}\n`;
-    }
-    if (totalPending > 0) {
-      report += `⏳ Pendente: R$ ${formatCurrency(totalPending)}\n`;
-    }
+    if (totalPaid > 0) report += `✅ Pago: R$ ${formatCurrency(totalPaid)}\n`;
+    if (totalPending > 0) report += `⏳ Pendente: R$ ${formatCurrency(totalPending)}\n`;
     report += "\n⸻\n\n";
   }
 
-  // Saldo
   const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
   const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
   const balance = totalIncome - totalExpense;
@@ -131,10 +114,6 @@ export async function getFullReport(userId: string, month?: number, year?: numbe
 
   report += `🔢 *SALDO DO MÊS*\n\n`;
   report += `${balanceEmoji} *R$ ${formatCurrency(balance)}*`;
-
-  if (expenses.length === 0 && incomes.length === 0) {
-    report = "Nenhuma movimentação encontrada no período.";
-  }
 
   return report;
 }
@@ -153,68 +132,46 @@ export async function markExpenseAsUnpaid(expenseId: string, userId: string) {
   });
 }
 
-/**
- * Gera relatório completo do grupo
- */
 export async function getGroupReport(groupId: string, month?: number, year?: number) {
-  const now = new Date();
-  const targetMonth = month ?? now.getMonth() + 1;
-  const targetYear = year ?? now.getFullYear();
+  const { startDate, endDate } = getMonthRange(month, year);
 
-  const startDate = new Date(targetYear, targetMonth - 1, 1);
-  const endDate = new Date(targetYear, targetMonth, 0, 23, 59, 59);
-
-  // Busca grupo
   const group = await prisma.group.findUnique({
     where: { id: groupId },
     include: { members: { include: { user: true } } },
   });
 
-  if (!group) {
-    return "Grupo não encontrado.";
-  }
+  if (!group) return "Grupo não encontrado.";
 
-  // Busca despesas do grupo
   const expenses = await prisma.expense.findMany({
-    where: {
-      groupId,
-      date: { gte: startDate, lte: endDate },
-    },
+    where: { groupId, date: { gte: startDate, lte: endDate } },
     include: { user: true },
     orderBy: { category: "asc" },
   });
 
-  // Busca entradas do grupo
   const incomes = await prisma.income.findMany({
-    where: {
-      groupId,
-      date: { gte: startDate, lte: endDate },
-    },
+    where: { groupId, date: { gte: startDate, lte: endDate } },
     include: { user: true },
     orderBy: { source: "asc" },
   });
 
-  // Monta o relatório
   const groupName = group.name || "Grupo";
+
+  if (expenses.length === 0 && incomes.length === 0) {
+    return `👥 *${groupName}*\n\nNenhuma movimentação encontrada no período.`;
+  }
+
   let report = `👥 *Relatório do ${groupName}*\n\n`;
 
-  // Seção de Entradas
   if (incomes.length > 0) {
     report += "📥 *ENTRADAS*\n\n";
 
-    const incomesBySource: Record<string, typeof incomes> = {};
-    for (const income of incomes) {
-      if (!incomesBySource[income.source]) {
-        incomesBySource[income.source] = [];
-      }
-      incomesBySource[income.source].push(income);
-    }
+    const incomesBySource = groupByKey(incomes, (i) => i.source);
 
     for (const [source, items] of Object.entries(incomesBySource)) {
       const emoji = SOURCE_EMOJIS[source] || "📦";
       const subtotal = items.reduce((sum, i) => sum + i.amount, 0);
 
-      report += `${emoji} *${source.charAt(0).toUpperCase() + source.slice(1)}*\n`;
+      report += `${emoji} *${capitalize(source)}*\n`;
       for (const item of items) {
         const userName = item.user.name || item.user.phone.slice(-4);
         report += `    • ${item.description}: ${formatCurrency(item.amount)} (${userName})\n`;
@@ -227,23 +184,16 @@ export async function getGroupReport(groupId: string, month?: number, year?: num
     report += "⸻\n\n";
   }
 
-  // Seção de Despesas
   if (expenses.length > 0) {
     report += "📤 *DESPESAS*\n\n";
 
-    const expensesByCategory: Record<string, typeof expenses> = {};
-    for (const expense of expenses) {
-      if (!expensesByCategory[expense.category]) {
-        expensesByCategory[expense.category] = [];
-      }
-      expensesByCategory[expense.category].push(expense);
-    }
+    const expensesByCategory = groupByKey(expenses, (e) => e.category);
 
     for (const [category, items] of Object.entries(expensesByCategory)) {
       const emoji = CATEGORY_EMOJIS[category] || "📦";
       const subtotal = items.reduce((sum, e) => sum + e.amount, 0);
 
-      report += `${emoji} *${category.charAt(0).toUpperCase() + category.slice(1)}*\n`;
+      report += `${emoji} *${capitalize(category)}*\n`;
       for (const item of items) {
         const userName = item.user.name || item.user.phone.slice(-4);
         const paidMark = item.paid ? " ✅" : "";
@@ -257,16 +207,11 @@ export async function getGroupReport(groupId: string, month?: number, year?: num
     const totalPending = totalExpense - totalPaid;
 
     report += `💸 *Total Despesas: R$ ${formatCurrency(totalExpense)}*\n`;
-    if (totalPaid > 0) {
-      report += `✅ Pago: R$ ${formatCurrency(totalPaid)}\n`;
-    }
-    if (totalPending > 0) {
-      report += `⏳ Pendente: R$ ${formatCurrency(totalPending)}\n`;
-    }
+    if (totalPaid > 0) report += `✅ Pago: R$ ${formatCurrency(totalPaid)}\n`;
+    if (totalPending > 0) report += `⏳ Pendente: R$ ${formatCurrency(totalPending)}\n`;
     report += "\n⸻\n\n";
   }
 
-  // Saldo
   const totalIncome = incomes.reduce((sum, i) => sum + i.amount, 0);
   const totalExpense = expenses.reduce((sum, e) => sum + e.amount, 0);
   const balance = totalIncome - totalExpense;
@@ -275,24 +220,13 @@ export async function getGroupReport(groupId: string, month?: number, year?: num
   report += `🔢 *SALDO DO GRUPO*\n\n`;
   report += `${balanceEmoji} *R$ ${formatCurrency(balance)}*`;
 
-  if (expenses.length === 0 && incomes.length === 0) {
-    report = `👥 *${groupName}*\n\nNenhuma movimentação encontrada no período.`;
-  }
-
   return report;
 }
 
-/**
- * Gera relatório de divisão de despesas do grupo
- */
 export async function getGroupSplitReport(groupId: string, month?: number, year?: number) {
-  const group = await prisma.group.findUnique({
-    where: { id: groupId },
-  });
+  const group = await prisma.group.findUnique({ where: { id: groupId } });
 
-  if (!group) {
-    return "Grupo não encontrado.";
-  }
+  if (!group) return "Grupo não encontrado.";
 
   const split = await calculateSplit(groupId, month, year);
   const groupName = group.name || "Grupo";
