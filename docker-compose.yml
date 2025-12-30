@@ -1,0 +1,23 @@
+services:
+  jurandir:
+    build: .
+    container_name: jurandir-finance
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+    volumes:
+      # Persiste a sessão do WhatsApp entre restarts
+      - whatsapp_auth:/app/.wwebjs_auth
+      - whatsapp_cache:/app/.wwebjs_cache
+    # Necessário para o Chromium rodar sem sandbox
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - seccomp=unconfined
+
+volumes:
+  whatsapp_auth:
+  whatsapp_cache:
