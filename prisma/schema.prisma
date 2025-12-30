@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  phone     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expenses     Expense[]
+  incomes      Income[]
+  investments  Investment[]
+  budgets      Budget[]
+  groupMembers GroupMember[]
+}
+
+model Group {
+  id        String   @id // WhatsApp group ID (e.g., "123456789@g.us")
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  members  GroupMember[]
+  expenses Expense[]
+  incomes  Income[]
+}
+
+model GroupMember {
+  id        String   @id @default(cuid())
+  role      String   @default("member") // admin, member
+  joinedAt  DateTime @default(now())
+
+  groupId String
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([groupId])
+  @@index([userId])
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  description String
+  amount      Float
+  category    String
+  paid        Boolean  @default(false)
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  groupId String?
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([groupId])
+  @@index([category])
+  @@index([date])
+}
+
+model Investment {
+  id           String   @id @default(cuid())
+  name         String
+  type         String   // stocks, crypto, fixed_income, funds, other
+  amount       Float    // valor investido
+  currentValue Float    // valor atual
+  purchaseDate DateTime
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([type])
+}
+
+model Budget {
+  id       String @id @default(cuid())
+  category String
+  limit    Float
+  month    Int
+  year     Int
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([userId, category, month, year])
+  @@index([userId])
+}
+
+model Income {
+  id          String   @id @default(cuid())
+  description String
+  amount      Float
+  source      String   // salário, freelance, investimentos, outros
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  groupId String?
+  group   Group?  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([groupId])
+  @@index([source])
+  @@index([date])
+}
