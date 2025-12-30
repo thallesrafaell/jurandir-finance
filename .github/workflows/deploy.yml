@@ -29,9 +29,13 @@ jobs:
 
       - name: Generate Prisma Client
         run: bun run db:generate
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
       - name: Run tests
         run: bun test
+        env:
+          DATABASE_URL: "postgresql://dummy:dummy@localhost:5432/dummy"
 
   deploy:
     name: Deploy to VPS
