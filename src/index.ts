@@ -6,84 +6,71 @@ import { logger } from "./utils/logger";
 import type { MessageContext } from "./types";
 import type { Chat } from "whatsapp-web.js";
 
+const JURANDIR_PATTERN = /^jurandir[,:]?\s*/i;
+
+function extractPhoneFromId(id: string): string {
+  return id.replace(/@(c\.us|lid|s\.whatsapp\.net)$/, "");
+}
+
+function calculateTypingDelay(text: string): number {
+  return Math.min(3000, Math.max(500, text.length * 10));
+}
+
 const client = createWhatsAppClient();
 
 client.on("message", async (msg) => {
   try {
     const isGroup = msg.from.includes("@g.us");
 
-    let phone: string;
-    let groupId: string | undefined;
-    let groupName: string | undefined;
     let chat: Chat;
-
-    // Obtém o chat uma única vez
     try {
       chat = await msg.getChat();
     } catch {
-      return; // Se não conseguir obter o chat, ignora
+      return;
     }
 
+    let phone: string;
+    let groupId: string | undefined;
+    let groupName: string | undefined;
+
     if (isGroup) {
-      // Em grupos: só responde se a mensagem começar com "Jurandir"
       const messageText = msg.body.trim();
-      const startsWithJurandir = /^jurandir/i.test(messageText);
+      if (!JURANDIR_PATTERN.test(messageText)) return;
 
-      if (!startsWithJurandir) {
-        return; // Ignora mensagens que não começam com "Jurandir"
-      }
+      msg.body = messageText.replace(JURANDIR_PATTERN, "").trim();
+      if (!msg.body) return;
 
-      // Remove "Jurandir" do início da mensagem para processar o resto
-      msg.body = messageText.replace(/^jurandir[,:]?\s*/i, "").trim();
-
-      // Se sobrou mensagem vazia, ignora
-      if (!msg.body) {
-        return;
-      }
-
-      // Em grupos: msg.from = ID do grupo, msg.author = ID do usuário
       groupId = msg.from;
-
-      // author pode ser undefined em algumas situações, fallback para from
       const authorId = msg.author || msg.from;
-      phone = authorId.replace(/@(c\.us|lid|s\.whatsapp\.net)$/, "");
-
-      // Nome do grupo
+      phone = extractPhoneFromId(authorId);
       groupName = chat.name;
 
       logger.info({ groupId, phone, groupName, message: msg.body }, "Group message received");
     } else {
-      // Em privado: msg.from = ID do usuário
-      phone = msg.from.replace(/@(c\.us|lid)$/, "");
+      phone = extractPhoneFromId(msg.from);
       logger.info({ phone, message: msg.body, from: msg.from }, "Private message received");
     }
 
     const name = (msg as any)._data?.notifyName || null;
     const user = await getOrCreateUser(phone, name);
 
-    // Se for grupo, registra o usuário como membro
     if (isGroup && groupId) {
       await ensureMember(groupId, user.id, groupName);
       logger.info({ groupId, userId: user.id }, "User registered as group member");
     }
 
-    // Monta o contexto
     const context: MessageContext = {
       userId: user.id,
       groupId,
       isGroup,
     };
 
-    // Mostra "digitando..." enquanto processa
     await chat.sendStateTyping();
 
-    // Processa a mensagem com o agente
     const reply = await processMessage(msg.body, context);
 
     if (reply) {
-      // Calcula delay baseado no tamanho da resposta (simula digitação)
-      // Mínimo 500ms, máximo 3000ms
-      const typingDelay = Math.min(3000, Math.max(500, reply.length * 10));
+      const typingDelay = calculateTypingDelay(reply);
       await new Promise((resolve) => setTimeout(resolve, typingDelay));
 
       logger.info({ phone, isGroup, reply: reply.slice(0, 100) }, "Sending reply");

@@ -37,8 +37,6 @@ export function createWhatsAppClient() {
 
   client.on("auth_failure", (msg) => {
     whatsappLogger.error({ msg }, "WhatsApp authentication failed");
-    // Limpa sessão corrompida
-    whatsappLogger.info("Clearing session and restarting...");
   });
 
   client.on("disconnected", (reason) => {
