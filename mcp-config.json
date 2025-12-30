@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "jurandir-finance": {
+      "command": "bun",
+      "args": ["src/mcp/server.ts"],
+      "cwd": "/home/thalles/jurandir-finance"
+    }
+  }
+}
